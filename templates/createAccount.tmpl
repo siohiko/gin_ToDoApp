@@ -10,6 +10,7 @@
       <section>
         <h1>Create Account</h1>
         <div class="auth_form">
+          {{range .errorMessages}} {{.}}<br> {{end}}
           <form action="/v1/register" method="post">
             <label for="user_id">UserId</label>
             <input type="text" name="user_id">

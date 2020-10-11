@@ -5,6 +5,7 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"gopkg.in/go-playground/validator.v8"
 )
 
 func main() {
@@ -27,6 +28,9 @@ func main() {
 	router.Run(":8080")
 }
 
+
+
+
 func topPageEndPoint(c *gin.Context) {
 	c.HTML(http.StatusOK, "top.tmpl", gin.H{
 		"title": "Top Page",
@@ -38,21 +42,62 @@ func createAccountPageEndPoint(c *gin.Context) {
 }
 
 func registerEndPoint(c *gin.Context) {
+
+	config := &validator.Config{TagName: "validate"}
+	validate = validator.New(config)
+
 	user_id := c.PostForm("user_id")
 	name := c.PostForm("name")
 	password := c.PostForm("password")
-	dbInsert(user_id, name, password)
-	c.Redirect(http.StatusFound, "/v1/top")
+
+	user := &User{
+		UserId:     user_id,
+		Name:       name,
+		Password:   password,
+	}
+
+	var errorMessages []string 
+	errs := validate.Struct(user)
+
+	if errs != nil {
+		for _, err := range errs.(validator.ValidationErrors) {
+
+			fieldName := err.Field
+			var errorMessage string
+			var errorCause string
+			var typ = err.Tag
+			
+			switch typ {
+				case "required":
+					errorCause = "required"
+			}
+
+			errorMessage = "error message for" + fieldName + "." + " because " + errorCause
+			errorMessages = append(errorMessages, errorMessage)
+		}
+
+		c.HTML(http.StatusFound, "createAccount.tmpl", gin.H{
+			"errorMessages": errorMessages,
+		})
+
+	} else {
+		dbInsert(user)
+		c.Redirect(http.StatusFound, "/v1/top")
+	}
+
+	
 }
 
 
 
 type User struct {
 	gorm.Model
-	UserId string `gorm:"unique"`
-	Name string
-	Password string
+	UserId string `gorm:"unique" validate:"required"`
+	Name string `validate:"required"`
+	Password string `validate:"required"`
 }
+
+var validate *validator.Validate
 
 func gormConnect() *gorm.DB {
   DBMS     := "mysql"
@@ -72,10 +117,10 @@ func gormConnect() *gorm.DB {
 
 
 
-func dbInsert(user_id string, name string, password string) {
+func dbInsert(user *User ) {
 	db := gormConnect()
 	defer db.Close()
-	result := db.Create(&User{UserId: user_id, Name: name, Password: password})
+	result := db.Create(user)
 
 	if result.Error != nil {
 		panic(result.Error)
