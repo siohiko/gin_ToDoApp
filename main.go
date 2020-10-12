@@ -6,6 +6,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"gopkg.in/go-playground/validator.v8"
+	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	MinCost     int = 4
+	MaxCost     int = 31
+	DefaultCost int = 10
 )
 
 func main() {
@@ -50,10 +57,19 @@ func registerEndPoint(c *gin.Context) {
 	name := c.PostForm("name")
 	password := c.PostForm("password")
 
+	bs, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+
+	if err != nil {
+		c.Redirect(http.StatusFound, "/v1/top")
+		return
+	}
+
+
+
 	user := &User{
 		UserId:     user_id,
 		Name:       name,
-		Password:   password,
+		Password:   bs,
 	}
 
 	var errorMessages []string 
@@ -94,7 +110,7 @@ type User struct {
 	gorm.Model
 	UserId string `gorm:"unique" validate:"required"`
 	Name string `validate:"required"`
-	Password string `validate:"required"`
+	Password []byte `validate:"required"`
 }
 
 var validate *validator.Validate
