@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"gopkg.in/go-playground/validator.v8"
 	"golang.org/x/crypto/bcrypt"
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 )
 
 const (
@@ -24,6 +26,9 @@ func main() {
 	router := gin.Default()
 	router.Static("styles", "./styles")
 	router.LoadHTMLGlob("templates/*")
+	store := cookie.NewStore([]byte("secret"))
+	router.Use(sessions.Sessions("todoapp", store))
+
 
 	//	v1 route
 	v1 := router.Group("/v1")
@@ -31,6 +36,7 @@ func main() {
 		v1.GET("/top", topPageEndPoint)
 		v1.GET("/create_account_page", createAccountPageEndPoint)
 		v1.POST("/register", registerEndPoint)
+		v1.POST("/login", loginEndPoint)
 	}
 	router.Run(":8080")
 }
@@ -39,14 +45,20 @@ func main() {
 
 
 func topPageEndPoint(c *gin.Context) {
+	session := sessions.Default(c)
+
 	c.HTML(http.StatusOK, "top.tmpl", gin.H{
 		"title": "Top Page",
 	})
 }
 
+
+
 func createAccountPageEndPoint(c *gin.Context) {
 	c.HTML(http.StatusOK, "createAccount.tmpl", gin.H{})
 }
+
+
 
 func registerEndPoint(c *gin.Context) {
 
@@ -63,8 +75,6 @@ func registerEndPoint(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/v1/top")
 		return
 	}
-
-
 
 	user := &User{
 		UserId:     user_id,
@@ -100,10 +110,30 @@ func registerEndPoint(c *gin.Context) {
 		dbInsert(user)
 		c.Redirect(http.StatusFound, "/v1/top")
 	}
-
-	
 }
 
+
+func loginEndPoint(c *gin.Context) {
+	user_id := c.PostForm("user_id")
+	password := c.PostForm("password")
+
+	var user User
+
+	db := gormConnect()
+	defer db.Close()
+	db.Where("user_id = ?", string(user_id)).First(&user)
+
+	err := bcrypt.CompareHashAndPassword(user.Password, []byte(password))
+
+	if err != nil {
+		c.HTML(http.StatusUnauthorized, "top.tmpl", gin.H{})
+	} else {
+		session := sessions.Default(c)
+		session.Set("user_id", user.UserId)
+    session.Save()
+		c.Redirect(http.StatusFound, "/v1/top")
+	}
+}
 
 
 type User struct {
@@ -122,7 +152,7 @@ func gormConnect() *gorm.DB {
   PROTOCOL := "tcp(localhost:3306)"
   DBNAME   := "todoapp"
 
-  CONNECT := USER+":"+PASS+"@"+PROTOCOL+"/"+DBNAME
+  CONNECT := USER+":"+PASS+"@"+PROTOCOL+"/"+DBNAME+"?parseTime=true"
   db,err := gorm.Open(DBMS, CONNECT)
 
   if err != nil {
