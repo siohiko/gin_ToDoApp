@@ -9,6 +9,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
+	"unicode/utf8"
 )
 
 const (
@@ -16,6 +17,15 @@ const (
 	MaxCost     int = 31
 	DefaultCost int = 10
 )
+
+
+type User struct {
+	gorm.Model
+	UserId string `gorm:"unique" validate:"required"`
+	Name string `validate:"required"`
+	Password []byte `validate:"required"`
+}
+
 
 func main() {
 
@@ -43,7 +53,9 @@ func main() {
 }
 
 
-
+//*****************************//
+//**********EndPoints**********//
+//*****************************//
 
 func topPageEndPoint(c *gin.Context) {
 	c.HTML(http.StatusOK, "top.tmpl", gin.H{
@@ -60,19 +72,30 @@ func createAccountPageEndPoint(c *gin.Context) {
 
 
 func registerEndPoint(c *gin.Context) {
+	//エラーメッセージ格納用スライス
+	var errorMessages []string 
 
 	config := &validator.Config{TagName: "validate"}
-	validate = validator.New(config)
+	validate := validator.New(config)
 
 	user_id := c.PostForm("user_id")
 	name := c.PostForm("name")
 	password := c.PostForm("password")
+	lengthPass := utf8.RuneCountInString(password)
 
+	//送信されたパスワードの文字数バリデーション
+	if lengthPass < 8 || 16 < lengthPass {
+		var errorMessage string
+		errorMessage = "Password must be at least 8 and no more than 16 characters long"
+		errorMessages = append(errorMessages, errorMessage)
+	}
+
+	//パスワードハッシュ時にエラーが起きた場合の処理
 	bs, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-
 	if err != nil {
-		c.Redirect(http.StatusFound, "/v1/top")
-		return
+		var errorMessage string
+		errorMessage = "Password must be at least 8 and no more than 16 characters long"
+		errorMessages = append(errorMessages, errorMessage)
 	}
 
 	user := &User{
@@ -81,7 +104,7 @@ func registerEndPoint(c *gin.Context) {
 		Password:   bs,
 	}
 
-	var errorMessages []string 
+	//ここからモデルレベルでのバリデーション
 	errs := validate.Struct(user)
 
 	if errs != nil {
@@ -100,16 +123,19 @@ func registerEndPoint(c *gin.Context) {
 			errorMessage = "error message for" + fieldName + "." + " because " + errorCause
 			errorMessages = append(errorMessages, errorMessage)
 		}
+	}
 
+	//エラーメッセージが一つもなければユーザー登録成功
+	if len(errorMessages) > 0 { 
 		c.HTML(http.StatusFound, "createAccount.tmpl", gin.H{
 			"errorMessages": errorMessages,
 		})
-
 	} else {
 		dbInsert(user)
 		c.Redirect(http.StatusFound, "/v1/top")
 	}
 }
+
 
 
 func loginEndPoint(c *gin.Context) {
@@ -118,9 +144,7 @@ func loginEndPoint(c *gin.Context) {
 
 	var user User
 
-	db := gormConnect()
-	defer db.Close()
-	db.Where("user_id = ?", string(user_id)).First(&user)
+	findUserById(&user, string(user_id))
 
 	err := bcrypt.CompareHashAndPassword(user.Password, []byte(password))
 
@@ -141,23 +165,19 @@ func mypageEndPoint(c *gin.Context) {
 }
 
 
+
 func logoutEndPoint(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Clear()
 	session.Save()
 	c.Redirect(http.StatusFound, "/v1/top")
 }
+//*****************************//
+//*****************************//
+//*****************************//
 
 
 
-type User struct {
-	gorm.Model
-	UserId string `gorm:"unique" validate:"required"`
-	Name string `validate:"required"`
-	Password []byte `validate:"required"`
-}
-
-var validate *validator.Validate
 
 func gormConnect() *gorm.DB {
   DBMS     := "mysql"
@@ -188,17 +208,23 @@ func dbInsert(user *User ) {
 }
 
 
+func findUserById(user *User, user_id string ) {
+	db := gormConnect()
+	defer db.Close()
+	db.Where("user_id = ?", user_id).First(&user)
+}
+
+
 func sessionCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 			session := sessions.Default(c)
-			userId := session.Get("user_id"))
-			// セッションがない場合、ログインフォームをだす
+			userId := session.Get("user_id")
+
 			if userId == nil {
 					c.Redirect(http.StatusMovedPermanently, "/v1/top")
 					c.Abort()
 			} else {
-					//c.Set("UserId", LoginInfo.UserId) // ユーザidをセット
 					c.Next()
 			}
 	}
