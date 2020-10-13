@@ -36,7 +36,8 @@ func main() {
 		v1.GET("/create_account_page", createAccountPageEndPoint)
 		v1.POST("/register", registerEndPoint)
 		v1.POST("/login", loginEndPoint)
-		v1.GET("mypage", sessionCheck(), mypageEndPoint)
+		v1.GET("/mypage", sessionCheck(), mypageEndPoint)
+		v1.POST("/logout", logoutEndPoint)
 	}
 	router.Run(":8080")
 }
@@ -140,6 +141,14 @@ func mypageEndPoint(c *gin.Context) {
 }
 
 
+func logoutEndPoint(c *gin.Context) {
+	session := sessions.Default(c)
+	session.Clear()
+	session.Save()
+	c.Redirect(http.StatusFound, "/v1/top")
+}
+
+
 
 type User struct {
 	gorm.Model
@@ -183,8 +192,7 @@ func sessionCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 			session := sessions.Default(c)
-			userId := session.Get("user_id")
-
+			userId := session.Get("user_id"))
 			// セッションがない場合、ログインフォームをだす
 			if userId == nil {
 					c.Redirect(http.StatusMovedPermanently, "/v1/top")
