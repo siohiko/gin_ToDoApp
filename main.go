@@ -29,7 +29,6 @@ func main() {
 	store := cookie.NewStore([]byte("secret"))
 	router.Use(sessions.Sessions("todoapp", store))
 
-
 	//	v1 route
 	v1 := router.Group("/v1")
 	{
@@ -37,6 +36,7 @@ func main() {
 		v1.GET("/create_account_page", createAccountPageEndPoint)
 		v1.POST("/register", registerEndPoint)
 		v1.POST("/login", loginEndPoint)
+		v1.GET("mypage", sessionCheck(), mypageEndPoint)
 	}
 	router.Run(":8080")
 }
@@ -45,8 +45,6 @@ func main() {
 
 
 func topPageEndPoint(c *gin.Context) {
-	session := sessions.Default(c)
-
 	c.HTML(http.StatusOK, "top.tmpl", gin.H{
 		"title": "Top Page",
 	})
@@ -131,9 +129,16 @@ func loginEndPoint(c *gin.Context) {
 		session := sessions.Default(c)
 		session.Set("user_id", user.UserId)
     session.Save()
-		c.Redirect(http.StatusFound, "/v1/top")
+		c.Redirect(http.StatusFound, "/v1/mypage")
 	}
 }
+
+
+func mypageEndPoint(c *gin.Context) {
+	c.HTML(http.StatusOK, "mypage.tmpl", gin.H{
+	})
+}
+
 
 
 type User struct {
@@ -170,5 +175,23 @@ func dbInsert(user *User ) {
 
 	if result.Error != nil {
 		panic(result.Error)
+	}
+}
+
+
+func sessionCheck() gin.HandlerFunc {
+	return func(c *gin.Context) {
+
+			session := sessions.Default(c)
+			userId := session.Get("user_id")
+
+			// セッションがない場合、ログインフォームをだす
+			if userId == nil {
+					c.Redirect(http.StatusMovedPermanently, "/v1/top")
+					c.Abort()
+			} else {
+					//c.Set("UserId", LoginInfo.UserId) // ユーザidをセット
+					c.Next()
+			}
 	}
 }
