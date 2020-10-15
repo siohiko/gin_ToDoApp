@@ -78,40 +78,30 @@ func registerEndPoint(c *gin.Context) {
 	config := &validator.Config{TagName: "validate"}
 	validate := validator.New(config)
 
-	user_id := c.PostForm("user_id")
-	name := c.PostForm("name")
-	password := c.PostForm("password")
-	lengthPass := utf8.RuneCountInString(password)
+
+	postedUser := postedUser(c)
+	lengthPass := utf8.RuneCountInString(string(postedUser.Password))
 
 	//送信されたパスワードの文字数バリデーション
 	if lengthPass < 8 || 16 < lengthPass {
-		var errorMessage string
-		errorMessage = "Password must be at least 8 and no more than 16 characters long"
-		errorMessages = append(errorMessages, errorMessage)
+		errorMessages = append(errorMessages, "Password must be at least 8 and no more than 16 characters long")
 	}
 
 	//パスワードハッシュ時にエラーが起きた場合の処理
-	bs, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	bs, err := bcrypt.GenerateFromPassword(postedUser.Password, bcrypt.DefaultCost)
 	if err != nil {
-		var errorMessage string
-		errorMessage = "Password must be at least 8 and no more than 16 characters long"
-		errorMessages = append(errorMessages, errorMessage)
+		errorMessages = append(errorMessages, "Password must be at least 8 and no more than 16 characters long")
 	}
 
-	user := &User{
-		UserId:     user_id,
-		Name:       name,
-		Password:   bs,
-	}
+	postedUser.Password = bs
 
 	//ここからモデルレベルでのバリデーション
-	errs := validate.Struct(user)
+	errs := validate.Struct(postedUser)
 
 	if errs != nil {
 		for _, err := range errs.(validator.ValidationErrors) {
 
 			fieldName := err.Field
-			var errorMessage string
 			var errorCause string
 			var typ = err.Tag
 			
@@ -120,8 +110,7 @@ func registerEndPoint(c *gin.Context) {
 					errorCause = "required"
 			}
 
-			errorMessage = "error message for" + fieldName + "." + " because " + errorCause
-			errorMessages = append(errorMessages, errorMessage)
+			errorMessages = append(errorMessages, "error message for" + fieldName + "." + " because " + errorCause)
 		}
 	}
 
@@ -131,7 +120,7 @@ func registerEndPoint(c *gin.Context) {
 			"errorMessages": errorMessages,
 		})
 	} else {
-		dbInsert(user)
+		dbInsert(postedUser)
 		c.Redirect(http.StatusFound, "/v1/top")
 	}
 }
@@ -139,14 +128,12 @@ func registerEndPoint(c *gin.Context) {
 
 
 func loginEndPoint(c *gin.Context) {
-	user_id := c.PostForm("user_id")
-	password := c.PostForm("password")
-
+	postedUser := postedUser(c)
 	var user User
 
-	findUserById(&user, string(user_id))
+	findUserBy(&user, "user_id", string(postedUser.UserId))
 
-	err := bcrypt.CompareHashAndPassword(user.Password, []byte(password))
+	err := bcrypt.CompareHashAndPassword(user.Password, postedUser.Password)
 
 	if err != nil {
 		c.HTML(http.StatusUnauthorized, "top.tmpl", gin.H{})
@@ -208,10 +195,10 @@ func dbInsert(user *User ) {
 }
 
 
-func findUserById(user *User, user_id string ) {
+func findUserBy(user *User, columnName string, value string) {
 	db := gormConnect()
 	defer db.Close()
-	db.Where("user_id = ?", user_id).First(&user)
+	db.Where(columnName + " = ?", value).First(&user)
 }
 
 
@@ -228,4 +215,16 @@ func sessionCheck() gin.HandlerFunc {
 					c.Next()
 			}
 	}
+}
+
+
+func postedUser(c *gin.Context) *User {
+	//ginのバインド関数は、送られてくるパスワードの型とUser構造体のパスワードの型が違うため、400を吐くから使わない方針。
+	var postedUser User
+	postedUser.UserId = c.PostForm("user_id")
+	postedUser.Name = c.PostForm("name")
+	//送られてきたパスワードはstring型なので、byte型に変換して入れ直す
+	postedUser.Password = []byte(c.PostForm("password"))
+
+	return &postedUser
 }
