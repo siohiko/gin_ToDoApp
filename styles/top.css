@@ -1,0 +1,15 @@
+.main_ttl {
+  color: red;
+}
+.login_form {
+
+}
+.auth_form label {
+  display: block;
+  margin-bottom: 0px;
+}
+.auth_form input {
+  display: block;
+  margin-bottom: 10px;
+  border: 1px solid #000;
+}
