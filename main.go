@@ -10,6 +10,9 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"unicode/utf8"
+
+	"errors"
+	"github.com/go-sql-driver/mysql"
 )
 
 const (
@@ -33,6 +36,13 @@ func main() {
 	defer db.Close()
 	db.AutoMigrate(&User{})
 
+	router := setupRouter()
+	router.Run(":8080")
+}
+
+
+
+func setupRouter() *gin.Engine {
 	router := gin.Default()
 	router.Static("styles", "./styles")
 	router.LoadHTMLGlob("templates/*")
@@ -49,8 +59,10 @@ func main() {
 		v1.GET("/mypage", sessionCheck(), mypageEndPoint)
 		v1.POST("/logout", logoutEndPoint)
 	}
-	router.Run(":8080")
+	return router
 }
+
+
 
 
 //*****************************//
@@ -77,7 +89,6 @@ func registerEndPoint(c *gin.Context) {
 
 	config := &validator.Config{TagName: "validate"}
 	validate := validator.New(config)
-
 
 	postedUser := postedUser(c)
 	lengthPass := utf8.RuneCountInString(string(postedUser.Password))
@@ -120,8 +131,15 @@ func registerEndPoint(c *gin.Context) {
 			"errorMessages": errorMessages,
 		})
 	} else {
-		dbInsert(postedUser)
-		c.Redirect(http.StatusFound, "/v1/top")
+		errMsg := dbInsert(postedUser)
+		if errMsg != "" {
+			errorMessages = append(errorMessages, errMsg)
+			c.HTML(http.StatusFound, "createAccount.tmpl", gin.H{
+				"errorMessages": errorMessages,
+			})
+		} else {
+			c.Redirect(http.StatusSeeOther, "/v1/top")
+		}
 	}
 }
 
@@ -129,12 +147,16 @@ func registerEndPoint(c *gin.Context) {
 
 func loginEndPoint(c *gin.Context) {
 	postedUser := postedUser(c)
+	
 	var user User
 
-	findUserBy(&user, "user_id", string(postedUser.UserId))
+	if err := findUserBy(&user, "user_id", string(postedUser.UserId)); err != nil {
+		c.HTML(http.StatusUnauthorized, "top.tmpl", gin.H{})
+		return
+	}
+
 
 	err := bcrypt.CompareHashAndPassword(user.Password, postedUser.Password)
-
 	if err != nil {
 		c.HTML(http.StatusUnauthorized, "top.tmpl", gin.H{})
 	} else {
@@ -184,21 +206,39 @@ func gormConnect() *gorm.DB {
 
 
 
-func dbInsert(user *User ) {
+func dbInsert(user *User ) (errMsg string){
 	db := gormConnect()
 	defer db.Close()
 	result := db.Create(user)
+	errMsg = ""
 
 	if result.Error != nil {
-		panic(result.Error)
+		if driverErr, ok := result.Error.(*mysql.MySQLError); ok {
+			errMsg = mySQLErrorMsgHandling(driverErr)
+		}
 	}
+
+	return errMsg
 }
 
+func mySQLErrorMsgHandling(driverErr *mysql.MySQLError) string {
+	var errMsg string 
+	switch driverErr.Number {
+	case 1062:
+			errMsg = "That user ID has already been used"
+	default:
+		errMsg = ""
+	}
+	return errMsg
+}
 
-func findUserBy(user *User, columnName string, value string) {
+func findUserBy(user *User, columnName string, value string) error {
 	db := gormConnect()
 	defer db.Close()
-	db.Where(columnName + " = ?", value).First(&user)
+	if err := db.Where(columnName + " = ?", value).First(&user).Error; err != nil {
+		return errors.New("error")
+	}
+	return nil
 }
 
 
